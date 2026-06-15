@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 import tempfile
+from io import BytesIO
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import numpy as np
 import streamlit as st
 
 from cross_hardy_pipe_tool_plan_import import build_draft_tables
@@ -50,40 +53,67 @@ for key, default in {
         st.session_state[key] = default
 
 
+def create_map_legend_bytes() -> bytes:
+    fig = plt.figure(figsize=(4.4, 5.8), dpi=180)
+    fig.patch.set_facecolor("white")
+
+    title_ax = fig.add_axes([0.08, 0.90, 0.84, 0.08])
+    title_ax.axis("off")
+    title_ax.text(0.0, 0.4, "Map Legend", fontsize=13, fontweight="bold", ha="left", va="center")
+
+    grad_ax = fig.add_axes([0.12, 0.74, 0.72, 0.09])
+    gradient = np.linspace(0, 1, 256).reshape(1, -1)
+    grad_ax.imshow(gradient, aspect="auto", cmap="plasma")
+    grad_ax.set_xticks([])
+    grad_ax.set_yticks([])
+    grad_ax.set_frame_on(True)
+
+    grad_label_ax = fig.add_axes([0.12, 0.67, 0.72, 0.05])
+    grad_label_ax.axis("off")
+    grad_label_ax.text(0.0, 0.7, "Lower velocity", fontsize=9, ha="left")
+    grad_label_ax.text(1.0, 0.7, "Higher velocity", fontsize=9, ha="right")
+    grad_label_ax.text(0.5, 0.0, "Pipe color = velocity (ft/s)", fontsize=10, ha="center")
+
+    flow_ax = fig.add_axes([0.10, 0.42, 0.80, 0.18])
+    flow_ax.axis("off")
+    flow_ax.plot([0.05, 0.95], [0.72, 0.72], color="#415a77", linewidth=2)
+    flow_ax.plot([0.05, 0.95], [0.48, 0.48], color="#415a77", linewidth=5)
+    flow_ax.plot([0.05, 0.95], [0.22, 0.22], color="#415a77", linewidth=8)
+    flow_ax.text(0.98, 0.72, "Lower flow", fontsize=9, va="center", ha="left")
+    flow_ax.text(0.98, 0.48, "Medium flow", fontsize=9, va="center", ha="left")
+    flow_ax.text(0.98, 0.22, "Higher flow", fontsize=9, va="center", ha="left")
+    flow_ax.text(0.5, -0.08, "Pipe thickness = flow magnitude", fontsize=10, ha="center")
+
+    symbol_ax = fig.add_axes([0.10, 0.08, 0.80, 0.22])
+    symbol_ax.axis("off")
+    symbol_ax.annotate("", xy=(0.42, 0.72), xytext=(0.10, 0.72),
+                       arrowprops=dict(arrowstyle="-|>", lw=2.2, color="#222222"))
+    symbol_ax.text(0.48, 0.72, "Arrow = flow direction", fontsize=10, va="center", ha="left")
+    symbol_ax.scatter([0.18], [0.28], s=220, c="#d7ebff", edgecolors="#1f4e79")
+    symbol_ax.text(0.48, 0.28, "Circle = network node", fontsize=10, va="center", ha="left")
+
+    out = BytesIO()
+    fig.savefig(out, format="png", bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    out.seek(0)
+    return out.getvalue()
+
 def render_solver_results(summary, nodes_df, pipes_df, map_bytes):
-    nodes_df = nodes_df.rename(columns={
-        'node_id': 'node_id',
+    legend_bytes = create_map_legend_bytes()
+
+    nodes_display = nodes_df.rename(columns={
         'demand': 'demand_scfm',
-        'is_source': 'is_source',
-        'source_pressure': 'source_pressure_psig',
-        'pressure': 'pressure_psig',
-        'drop_from_reference': 'drop_from_reference_psi',
         'x': 'x_relative',
         'y': 'y_relative',
     })
 
-    pipes_df = pipes_df.rename(columns={
-        'pipe_id': 'pipe_id',
-        'from_node': 'from_node',
-        'to_node': 'to_node',
-        'length': 'length_ft',
-        'diameter': 'diameter_in',
-        'K': 'K_psi_per_scfm2',
-        'loss_exponent': 'loss_exponent',
-        'status': 'status',
-        'flow': 'flow_scfm',
-        'dP_signed': 'dP_signed_psi',
-        'dP_abs': 'dP_abs_psi',
-        'velocity_relative': 'velocity_relative',
-        'direction': 'direction',
-        'loops': 'loops',
-    })
+    pipes_display = pipes_df.copy()
 
     st.subheader('Summary')
     c1, c2, c3 = st.columns(3)
     c1.metric('Worst Node Pressure (psig)', f"{summary['worst_node_pressure_psig']:.3f}")
     c2.metric('Worst Node Drop (psi)', f"{summary['worst_node_drop_psi']:.3f}")
-    c3.metric('Max Relative Velocity', f"{summary['max_velocity_relative']:.3f}")
+    c3.metric('Max Segment Velocity (ft/s)', f"{summary['max_velocity_ft_s']:.3f}")
 
     extra_cols = []
     if 'loop_count' in summary:
@@ -101,44 +131,28 @@ def render_solver_results(summary, nodes_df, pipes_df, map_bytes):
         f"Reference source: {summary['reference_source']} @ {summary['reference_pressure_psig']:.3f} psig | "
         f"Worst node: {summary['worst_node_pressure_id']} | "
         f"Worst drop node: {summary['worst_node_drop_id']} | "
-        f"Max relative velocity pipe: {summary['max_velocity_relative_pipe_id']}"
+        f"Max velocity pipe: {summary['max_velocity_pipe_id']}"
     )
 
     st.write('### Nodes Results')
-    st.dataframe(nodes_df, use_container_width=True)
+    st.dataframe(nodes_display, use_container_width=True)
 
     st.write('### Pipes Results')
-    st.dataframe(pipes_df, use_container_width=True)
+    st.dataframe(pipes_display, use_container_width=True)
 
     if map_bytes:
         st.write('### Network Map')
-        map_col, legend_col = st.columns([4, 1.4])
+        map_col, legend_col = st.columns([4.3, 1.7])
         with map_col:
             st.image(map_bytes, caption='Pipe Network Map', use_container_width=True)
         with legend_col:
-            st.markdown('**Map Legend**')
-            st.markdown(
-                """
-- **Pipe color** = relative velocity  
-  - darker purple/blue = lower relative velocity  
-  - orange/yellow = higher relative velocity  
+            st.image(legend_bytes, use_container_width=True)
 
-- **Pipe thickness** = absolute flow magnitude  
-  - thinner lines = lower flow  
-  - thicker lines = higher flow  
-
-- **Arrow direction** = calculated flow direction  
-
-- **Node circles** = modeled network connection points
-                """
-            )
-
-    nodes_csv = nodes_df.to_csv(index=False).encode('utf-8')
-    pipes_csv = pipes_df.to_csv(index=False).encode('utf-8')
+    nodes_csv = nodes_display.to_csv(index=False).encode('utf-8')
+    pipes_csv = pipes_display.to_csv(index=False).encode('utf-8')
 
     st.download_button('Download nodes results CSV', data=nodes_csv, file_name='nodes_results.csv', mime='text/csv')
     st.download_button('Download pipes results CSV', data=pipes_csv, file_name='pipes_results.csv', mime='text/csv')
-
 
 def render_review_workflow(prefix: str, heading: str, download_name: str):
     nodes_key = f'{prefix}_nodes'
