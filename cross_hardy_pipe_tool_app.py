@@ -51,11 +51,39 @@ for key, default in {
 
 
 def render_solver_results(summary, nodes_df, pipes_df, map_bytes):
+    nodes_df = nodes_df.rename(columns={
+        'node_id': 'node_id',
+        'demand': 'demand_scfm',
+        'is_source': 'is_source',
+        'source_pressure': 'source_pressure_psig',
+        'pressure': 'pressure_psig',
+        'drop_from_reference': 'drop_from_reference_psi',
+        'x': 'x_relative',
+        'y': 'y_relative',
+    })
+
+    pipes_df = pipes_df.rename(columns={
+        'pipe_id': 'pipe_id',
+        'from_node': 'from_node',
+        'to_node': 'to_node',
+        'length': 'length_ft',
+        'diameter': 'diameter_in',
+        'K': 'K_psi_per_scfm2',
+        'loss_exponent': 'loss_exponent',
+        'status': 'status',
+        'flow': 'flow_scfm',
+        'dP_signed': 'dP_signed_psi',
+        'dP_abs': 'dP_abs_psi',
+        'velocity_relative': 'velocity_relative',
+        'direction': 'direction',
+        'loops': 'loops',
+    })
+
     st.subheader('Summary')
     c1, c2, c3 = st.columns(3)
-    c1.metric('Worst Node Pressure', f"{summary['worst_node_pressure']:.3f}")
-    c2.metric('Worst Node Drop', f"{summary['worst_node_drop']:.3f}")
-    c3.metric('Max Segment Velocity', f"{summary['max_velocity']:.3f}")
+    c1.metric('Worst Node Pressure (psig)', f"{summary['worst_node_pressure_psig']:.3f}")
+    c2.metric('Worst Node Drop (psi)', f"{summary['worst_node_drop_psi']:.3f}")
+    c3.metric('Max Relative Velocity', f"{summary['max_velocity_relative']:.3f}")
 
     extra_cols = []
     if 'loop_count' in summary:
@@ -69,6 +97,13 @@ def render_solver_results(summary, nodes_df, pipes_df, map_bytes):
         for col, (label, value) in zip(cols, extra_cols):
             col.metric(label, str(value))
 
+    st.caption(
+        f"Reference source: {summary['reference_source']} @ {summary['reference_pressure_psig']:.3f} psig | "
+        f"Worst node: {summary['worst_node_pressure_id']} | "
+        f"Worst drop node: {summary['worst_node_drop_id']} | "
+        f"Max relative velocity pipe: {summary['max_velocity_relative_pipe_id']}"
+    )
+
     st.write('### Nodes Results')
     st.dataframe(nodes_df, use_container_width=True)
 
@@ -77,7 +112,26 @@ def render_solver_results(summary, nodes_df, pipes_df, map_bytes):
 
     if map_bytes:
         st.write('### Network Map')
-        st.image(map_bytes, caption='Pipe Network Map', use_container_width=True)
+        map_col, legend_col = st.columns([4, 1.4])
+        with map_col:
+            st.image(map_bytes, caption='Pipe Network Map', use_container_width=True)
+        with legend_col:
+            st.markdown('**Map Legend**')
+            st.markdown(
+                """
+- **Pipe color** = relative velocity  
+  - darker purple/blue = lower relative velocity  
+  - orange/yellow = higher relative velocity  
+
+- **Pipe thickness** = absolute flow magnitude  
+  - thinner lines = lower flow  
+  - thicker lines = higher flow  
+
+- **Arrow direction** = calculated flow direction  
+
+- **Node circles** = modeled network connection points
+                """
+            )
 
     nodes_csv = nodes_df.to_csv(index=False).encode('utf-8')
     pipes_csv = pipes_df.to_csv(index=False).encode('utf-8')
