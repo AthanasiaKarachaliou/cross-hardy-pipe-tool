@@ -373,13 +373,13 @@ class PipeNetwork:
 
         return {
             'reference_source': ref.node_id,
-            'reference_pressure': ref.source_pressure,
+            'reference_pressure_psig': ref.source_pressure,
             'worst_node_pressure_id': worst_pressure_node.node_id,
-            'worst_node_pressure': worst_pressure_node.pressure,
+            'worst_node_pressure_psig': worst_pressure_node.pressure,
             'worst_node_drop_id': worst_drop_node_id,
-            'worst_node_drop': worst_drop,
-            'max_velocity_pipe_id': max_vel_pipe.pipe_id,
-            'max_velocity': max_vel_pipe.velocity,
+            'worst_node_drop_psi': worst_drop,
+            'max_velocity_relative_pipe_id': max_vel_pipe.pipe_id,
+            'max_velocity_relative': max_vel_pipe.velocity,
         }
 
     def nodes_dataframe(self) -> pd.DataFrame:
@@ -413,7 +413,7 @@ class PipeNetwork:
                 'flow': pipe.flow,
                 'dP_signed': pipe.dP_signed,
                 'dP_abs': pipe.dP_abs,
-                'velocity': pipe.velocity,
+                'velocity_relative': pipe.velocity,
                 'direction': f"{pipe.from_node}->{pipe.to_node}" if pipe.flow >= 0 else f"{pipe.to_node}->{pipe.from_node}",
                 'loops': pipe.loops,
             })
@@ -456,7 +456,7 @@ class PipeNetwork:
             lw = 1.5 + min(4.0, abs(pipe.flow) / 10.0)
             plt.plot([x1, x2], [y1, y2], color=color, linewidth=lw, zorder=1)
             mx, my = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-            label = f"{pid}\nQ={pipe.flow:.2f}\nv={pipe.velocity:.2f}"
+            label = f"{pid}\nQ={pipe.flow:.2f}\nv_rel={pipe.velocity:.2f}"
             plt.text(mx, my, label, fontsize=6, bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.8), zorder=5)
 
             dx, dy = x2 - x1, y2 - y1
