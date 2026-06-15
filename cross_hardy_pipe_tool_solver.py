@@ -199,10 +199,13 @@ class PipeNetwork:
 
     @staticmethod
     def velocity(pipe: Pipe, q: float) -> float:
-        area = math.pi * (pipe.diameter ** 2) / 4.0
-        if area <= 0:
+        """Return velocity in ft/s using flow treated as cfm and diameter in inches."""
+        diameter_ft = pipe.diameter / 12.0
+        area_ft2 = math.pi * (diameter_ft ** 2) / 4.0
+        if area_ft2 <= 0:
             return 0.0
-        return abs(q) / area
+        flow_ft3_s = abs(q) / 60.0
+        return flow_ft3_s / area_ft2
 
     def _path_to_root(self, node: str, parent: Dict[str, Optional[str]]) -> List[str]:
         path = []
@@ -368,9 +371,6 @@ class PipeNetwork:
             [n for n in self.nodes.values() if n.pressure is not None],
             key=lambda n: n.pressure,
         )
-        worst_drop_node_id, worst_drop = max(drops.items(), key=lambda x: x[1])
-        max_vel_pipe = max(self.pipes.values(), key=lambda p: p.velocity)
-
         return {
             'reference_source': ref.node_id,
             'reference_pressure_psig': ref.source_pressure,
@@ -378,8 +378,8 @@ class PipeNetwork:
             'worst_node_pressure_psig': worst_pressure_node.pressure,
             'worst_node_drop_id': worst_drop_node_id,
             'worst_node_drop_psi': worst_drop,
-            'max_velocity_relative_pipe_id': max_vel_pipe.pipe_id,
-            'max_velocity_relative': max_vel_pipe.velocity,
+            'max_velocity_pipe_id': max_vel_pipe.pipe_id,
+            'max_velocity_ft_s': max_vel_pipe.velocity,
         }
 
     def nodes_dataframe(self) -> pd.DataFrame:
@@ -390,9 +390,9 @@ class PipeNetwork:
                 'node_id': node.node_id,
                 'demand': node.demand,
                 'is_source': node.is_source,
-                'source_pressure': node.source_pressure,
-                'pressure': node.pressure,
-                'drop_from_reference': (ref.source_pressure - node.pressure) if node.pressure is not None else None,
+                'source_pressure_psig': node.source_pressure,
+                'pressure_psig': node.pressure,
+                'drop_from_reference_psi': (ref.source_pressure - node.pressure) if node.pressure is not None else None,
                 'x': node.x,
                 'y': node.y,
             })
@@ -405,15 +405,15 @@ class PipeNetwork:
                 'pipe_id': pipe.pipe_id,
                 'from_node': pipe.from_node,
                 'to_node': pipe.to_node,
-                'length': pipe.length,
-                'diameter': pipe.diameter,
-                'K': pipe.K,
+                'length_ft': pipe.length,
+                'diameter_in': pipe.diameter,
+                'K_psi_per_scfm2': pipe.K,
                 'loss_exponent': pipe.loss_exponent,
                 'status': pipe.status,
-                'flow': pipe.flow,
-                'dP_signed': pipe.dP_signed,
-                'dP_abs': pipe.dP_abs,
-                'velocity_relative': pipe.velocity,
+                'flow_scfm': pipe.flow,
+                'dP_signed_psi': pipe.dP_signed,
+                'dP_abs_psi': pipe.dP_abs,
+                'velocity_ft_s': pipe.velocity,
                 'direction': f"{pipe.from_node}->{pipe.to_node}" if pipe.flow >= 0 else f"{pipe.to_node}->{pipe.from_node}",
                 'loops': pipe.loops,
             })
@@ -456,7 +456,7 @@ class PipeNetwork:
             lw = 1.5 + min(4.0, abs(pipe.flow) / 10.0)
             plt.plot([x1, x2], [y1, y2], color=color, linewidth=lw, zorder=1)
             mx, my = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-            label = f"{pid}\nQ={pipe.flow:.2f}\nv_rel={pipe.velocity:.2f}"
+            label = f"{pid}\nQ={pipe.flow:.2f} scfm\nv={pipe.velocity:.2f} ft/s"
             plt.text(mx, my, label, fontsize=6, bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.8), zorder=5)
 
             dx, dy = x2 - x1, y2 - y1
